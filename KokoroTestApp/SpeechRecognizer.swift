@@ -79,7 +79,14 @@ final class SpeechRecognizer: ObservableObject {
         }
         // The task errors out when audio ends without a final result (e.g.
         // silence) — deliver whatever partial transcript we have.
-        if error != nil {
+        if let error {
+          if self.transcript.isEmpty {
+            // kAFAssistantErrorDomain 203 "Corrupt"/"Retry": Apple's speech
+            // servers rejected the session. Common in the iOS Simulator, which
+            // can't run server-based recognition — use a real device.
+            self.errorMessage = "Recognition failed: \(error.localizedDescription). "
+              + "Server-based Arabic recognition usually fails in the Simulator — try a real device."
+          }
           self.finish()
         }
       }
