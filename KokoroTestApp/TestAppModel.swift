@@ -30,7 +30,16 @@ final class TestAppModel: ObservableObject {
   @Published var selectedVoice: String = ""
   
   @Published var stringToFollowTheAudio: String = ""
-  
+
+  /// Speech-to-text for the conversation demo (Arabic by default)
+  let speechRecognizer = SpeechRecognizer()
+
+  /// Running transcript of the conversation (user + app turns)
+  @Published var conversation: [(role: String, text: String)] = []
+
+  /// Forwards nested ObservableObject changes (speechRecognizer) to SwiftUI
+  private var cancellables = Set<AnyCancellable>()
+
   var timer: Timer?
 
   /// Initializes the test app model with TTS engine, audio components, and voice data.
@@ -52,16 +61,49 @@ final class TestAppModel: ObservableObject {
     voiceNames = voices.keys.map { String($0.split(separator: ".")[0]) }.sorted(by: <)
     selectedVoice = voiceNames[0]
 
-    // Configure audio session for iOS
+    // Configure audio session for iOS (.playAndRecord so the mic works for
+    // speech recognition; .defaultToSpeaker keeps TTS playback on the speaker)
     #if os(iOS)
       do {
         let audioSession = AVAudioSession.sharedInstance()
-        try audioSession.setCategory(.playback, mode: .default)
+        try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetoothHFP])
         try audioSession.setActive(true)
       } catch {
         logPrint("Failed to set up AVAudioSession: \(error.localizedDescription)")
       }
     #endif
+
+    // Conversation loop: when a spoken turn is transcribed, reply and speak it
+    speechRecognizer.onFinal = { [weak self] text in
+      guard let self else { return }
+      conversation.append((role: "You", text: text))
+      let reply = respond(to: text)
+      conversation.append((role: "App", text: reply))
+      say(reply)
+    }
+    speechRecognizer.requestAuthorization()
+    speechRecognizer.objectWillChange
+      .sink { [weak self] _ in self?.objectWillChange.send() }
+      .store(in: &cancellables)
+  }
+
+  /// Produces the app's reply for a transcribed user turn.
+  /// Currently echoes the user's words back; swap this for an LLM call to get
+  /// real conversations. NOTE: recognized Arabic arrives undiacritized, and the
+  /// Nabra voice expects tashkeel'd input — a proper reply generator should
+  /// return diacritized text.
+  private func respond(to text: String) -> String {
+    text
+  }
+
+  /// Starts or stops a spoken conversation turn.
+  func toggleListening() {
+    if speechRecognizer.isListening {
+      speechRecognizer.stopListening()
+    } else {
+      playerNode.stop()
+      speechRecognizer.startListening()
+    }
   }
 
   /// Converts the provided text to speech and plays it through the audio engine.

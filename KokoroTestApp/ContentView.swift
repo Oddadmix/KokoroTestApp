@@ -57,7 +57,50 @@ struct ContentView: View {
         .padding()
         .foregroundStyle(.black)
         .background(.white)
-      
+
+      // Conversation mode: tap to talk, tap again to stop; the app replies
+      Button {
+        viewModel.toggleListening()
+      } label: {
+        HStack(alignment: .center) {
+          Spacer()
+          Image(systemName: viewModel.speechRecognizer.isListening ? "stop.circle.fill" : "mic.circle.fill")
+          Text(viewModel.speechRecognizer.isListening ? "Listening… tap to reply" : "Talk to the app")
+            .frame(height: 50)
+          Spacer()
+        }
+        .foregroundColor(.white)
+        .background(viewModel.speechRecognizer.isListening ? .red : .blue)
+        .padding(.horizontal)
+      }
+
+      // Live transcript while listening
+      if viewModel.speechRecognizer.isListening, !viewModel.speechRecognizer.transcript.isEmpty {
+        Text(viewModel.speechRecognizer.transcript)
+          .padding(.horizontal)
+          .foregroundStyle(.gray)
+      }
+
+      if let error = viewModel.speechRecognizer.errorMessage {
+        Text(error)
+          .padding(.horizontal)
+          .foregroundStyle(.red)
+          .font(.footnote)
+      }
+
+      // Conversation history (latest turns at the bottom)
+      ScrollView {
+        VStack(alignment: .leading, spacing: 6) {
+          ForEach(Array(viewModel.conversation.enumerated()), id: \.offset) { _, turn in
+            Text("\(turn.role): \(turn.text)")
+              .foregroundStyle(turn.role == "You" ? .black : .blue)
+              .frame(maxWidth: .infinity, alignment: turn.role == "You" ? .trailing : .leading)
+          }
+        }
+        .padding(.horizontal)
+      }
+      .frame(maxHeight: 180)
+
       Spacer()
     }
     .background(.white)
