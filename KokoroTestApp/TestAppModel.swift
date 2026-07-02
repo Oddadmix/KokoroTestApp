@@ -70,7 +70,7 @@ final class TestAppModel: ObservableObject {
     
     // Extract voice names and sort them alphabetically
     voiceNames = voices.keys.map { String($0.split(separator: ".")[0]) }.sorted(by: <)
-    selectedVoice = voiceNames[0]
+    selectedVoice = voiceNames.contains("ar_msa") ? "ar_msa" : voiceNames[0]
 
     // Configure audio session for iOS (.playAndRecord so the mic works for
     // speech recognition; .defaultToSpeaker keeps TTS playback on the speaker)
