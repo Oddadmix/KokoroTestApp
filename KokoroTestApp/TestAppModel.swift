@@ -5,6 +5,17 @@ import KokoroSwift
 import Combine
 import MLXUtilsLibrary
 
+/// One turn in the conversation, rendered as a chat bubble.
+struct ChatMessage: Identifiable, Equatable {
+  enum Role {
+    case user, app
+  }
+
+  let id = UUID()
+  let role: Role
+  let text: String
+}
+
 /// The view model that manages text-to-speech functionality using the Kokoro TTS engine.
 /// - Loading and managing the Kokoro TTS model
 /// - Managing available voice options
@@ -35,7 +46,7 @@ final class TestAppModel: ObservableObject {
   let speechRecognizer = SpeechRecognizer()
 
   /// Running transcript of the conversation (user + app turns)
-  @Published var conversation: [(role: String, text: String)] = []
+  @Published var conversation: [ChatMessage] = []
 
   /// Forwards nested ObservableObject changes (speechRecognizer) to SwiftUI
   private var cancellables = Set<AnyCancellable>()
@@ -75,11 +86,7 @@ final class TestAppModel: ObservableObject {
 
     // Conversation loop: when a spoken turn is transcribed, reply and speak it
     speechRecognizer.onFinal = { [weak self] text in
-      guard let self else { return }
-      conversation.append((role: "You", text: text))
-      let reply = respond(to: text)
-      conversation.append((role: "App", text: reply))
-      say(reply)
+      self?.sendText(text)
     }
     speechRecognizer.requestAuthorization()
     speechRecognizer.objectWillChange
@@ -94,6 +101,17 @@ final class TestAppModel: ObservableObject {
   /// return diacritized text.
   private func respond(to text: String) -> String {
     text
+  }
+
+  /// Adds a user turn (typed or transcribed) to the conversation, generates
+  /// the app's reply, and speaks it.
+  func sendText(_ text: String) {
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return }
+    conversation.append(ChatMessage(role: .user, text: trimmed))
+    let reply = respond(to: trimmed)
+    conversation.append(ChatMessage(role: .app, text: reply))
+    say(reply)
   }
 
   /// Starts or stops a spoken conversation turn.
