@@ -13,26 +13,57 @@ struct ContentView: View {
 
   var body: some View {
     NavigationStack {
-      VStack(spacing: 0) {
-        messages
-        composer
+      Group {
+        if viewModel.isReady {
+          VStack(spacing: 0) {
+            messages
+            composer
+          }
+        } else {
+          loadingView
+        }
       }
       .navigationTitle("Nabra")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
-        ToolbarItem(placement: .topBarTrailing) {
-          Menu {
-            Picker("Voice", selection: $viewModel.selectedVoice) {
-              ForEach(viewModel.voiceNames, id: \.self) { voice in
-                Text(voice).tag(voice)
+        if viewModel.isReady {
+          ToolbarItem(placement: .topBarTrailing) {
+            Menu {
+              Picker("Voice", selection: $viewModel.selectedVoice) {
+                ForEach(viewModel.voiceNames, id: \.self) { voice in
+                  Text(voice).tag(voice)
+                }
               }
+            } label: {
+              Label(viewModel.selectedVoice, systemImage: "person.wave.2")
             }
-          } label: {
-            Label(viewModel.selectedVoice, systemImage: "person.wave.2")
           }
         }
       }
     }
+  }
+
+  // MARK: - Loading
+
+  private var loadingView: some View {
+    VStack(spacing: 18) {
+      Spacer()
+      Image(systemName: "waveform.circle.fill")
+        .font(.system(size: 64))
+        .foregroundStyle(Color.accentColor)
+      Text("Nabra")
+        .font(.title2.weight(.bold))
+      ProgressView(value: viewModel.loadingProgress)
+        .progressViewStyle(.linear)
+        .frame(maxWidth: 260)
+        .animation(.easeInOut(duration: 0.3), value: viewModel.loadingProgress)
+      Text(viewModel.loadingStage)
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+      Spacer()
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .background(Color(.systemGroupedBackground))
   }
 
   // MARK: - Messages
