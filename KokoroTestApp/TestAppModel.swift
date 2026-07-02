@@ -104,16 +104,33 @@ final class TestAppModel: ObservableObject {
     return try? ArabicDiacritizer(modelPath: url)
   }()
 
-  /// Produces the app's reply for a transcribed user turn.
-  /// Currently echoes the user's words back (restoring tashkeel for the
-  /// Arabic voice); swap this for an LLM call to get real conversations.
-  private func respond(to text: String) -> String {
-    if selectedVoice.hasPrefix("ar_"),
-       !ArabicDiacritizer.isDiacritized(text),
-       let diacritizer {
-      return diacritizer.diacritize(text)
+  /// On-device Nawah-50M Arabic chat LLM; generates the reply for each turn.
+  private lazy var llm: NawahLLM? = {
+    guard let model = Bundle.main.url(forResource: "nawah_50m_fp16", withExtension: "safetensors"),
+          let tokenizer = Bundle.main.url(forResource: "nawah_tokenizer", withExtension: "json") else {
+      logPrint("Nawah LLM resources missing — replies will echo the input")
+      return nil
     }
-    return text
+    return try? NawahLLM(modelPath: model, tokenizerPath: tokenizer)
+  }()
+
+  /// Produces the app's reply for a user turn: the Nawah LLM generates an
+  /// Arabic answer, then CATT restores tashkeel so the Nabra voice receives
+  /// fully vowelized input. Falls back to echoing when a stage is missing.
+  private func respond(to text: String) -> String {
+    guard selectedVoice.hasPrefix("ar_") else { return text }
+
+    var reply = text
+    if let llm {
+      let generated = llm.reply(to: text)
+      if !generated.isEmpty {
+        reply = generated
+      }
+    }
+    if !ArabicDiacritizer.isDiacritized(reply), let diacritizer {
+      reply = diacritizer.diacritize(reply)
+    }
+    return reply
   }
 
   /// Adds a user turn (typed or transcribed) to the conversation, generates
