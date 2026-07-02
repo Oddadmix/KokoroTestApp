@@ -94,13 +94,26 @@ final class TestAppModel: ObservableObject {
       .store(in: &cancellables)
   }
 
+  /// On-device Arabic diacritizer (CATT); recognized speech and typed text
+  /// arrive undiacritized, but the Nabra voice expects full tashkeel.
+  private lazy var diacritizer: ArabicDiacritizer? = {
+    guard let url = Bundle.main.url(forResource: "catt_eo", withExtension: "safetensors") else {
+      logPrint("catt_eo.safetensors missing from bundle — Arabic text won't be diacritized")
+      return nil
+    }
+    return try? ArabicDiacritizer(modelPath: url)
+  }()
+
   /// Produces the app's reply for a transcribed user turn.
-  /// Currently echoes the user's words back; swap this for an LLM call to get
-  /// real conversations. NOTE: recognized Arabic arrives undiacritized, and the
-  /// Nabra voice expects tashkeel'd input — a proper reply generator should
-  /// return diacritized text.
+  /// Currently echoes the user's words back (restoring tashkeel for the
+  /// Arabic voice); swap this for an LLM call to get real conversations.
   private func respond(to text: String) -> String {
-    text
+    if selectedVoice.hasPrefix("ar_"),
+       !ArabicDiacritizer.isDiacritized(text),
+       let diacritizer {
+      return diacritizer.diacritize(text)
+    }
+    return text
   }
 
   /// Adds a user turn (typed or transcribed) to the conversation, generates
