@@ -68,8 +68,9 @@ final class TestAppModel: ObservableObject {
   /// - Parameter text: The text to be converted to speech
   func say(_ text: String) {
     // Generate audio using the selected voice
-    // Language is determined by voice name: 'a' prefix = US English, otherwise GB English
-    let (audio, tokenArray) = try! kokoroTTSEngine.generateAudio(voice: voices[selectedVoice + ".npy"]!, language: selectedVoice.first! == "a" ? .enUS : .enGB, text: text)
+    // Language is determined by voice name: 'ar_' prefix = Arabic, 'a' prefix = US English, otherwise GB English
+    let language: Language = selectedVoice.hasPrefix("ar_") ? .ar : (selectedVoice.first! == "a" ? .enUS : .enGB)
+    let (audio, tokenArray) = try! kokoroTTSEngine.generateAudio(voice: voices[selectedVoice + ".npy"]!, language: language, text: text)
     
     if let tokenArray {
       for t in tokenArray {

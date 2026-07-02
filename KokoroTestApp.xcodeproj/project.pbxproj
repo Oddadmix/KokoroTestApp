@@ -413,10 +413,10 @@
 /* Begin XCRemoteSwiftPackageReference section */
 		529799642F2FD51000435877 /* XCRemoteSwiftPackageReference "kokoro-ios" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/mlalma/kokoro-ios";
+			repositoryURL = "https://github.com/Oddadmix/kokoro-ios";
 			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 1.0.10;
+				kind = branch;
+				branch = main;
 			};
 		};
 		5297996B2F2FD60000435877 /* XCRemoteSwiftPackageReference "MLXUtilsLibrary" */ = {
@@ -424,7 +424,7 @@
 			repositoryURL = "https://github.com/mlalma/MLXUtilsLibrary.git";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 0.0.6;
+				minimumVersion = 0.0.3;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */

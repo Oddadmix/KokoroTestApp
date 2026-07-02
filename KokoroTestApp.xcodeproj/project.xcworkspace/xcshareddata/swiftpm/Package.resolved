@@ -1,22 +1,22 @@
 {
-  "originHash" : "1a7372b94f4cffe2b3559d8c7ba0d1dc2f327418b055f3bb4c8e02171574b094",
+  "originHash" : "6453e87f284e0c4110dbbc6d8705c9605f714b703e977bfbb9ba497baea723d4",
   "pins" : [
     {
-      "identity" : "kokoro-ios",
+      "identity" : "espeakngswift",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/mlalma/kokoro-ios",
+      "location" : "https://github.com/Oddadmix/eSpeakNGSwift",
       "state" : {
-        "revision" : "9a1e2614e5898106d00eec7fd21ff2fc89d805a6",
-        "version" : "1.0.10"
+        "revision" : "eaa27b265f4115d67c0f985eb4cf3c2fef0032ee",
+        "version" : "1.0.3"
       }
     },
     {
-      "identity" : "misakiswift",
+      "identity" : "kokoro-ios",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/mlalma/MisakiSwift",
+      "location" : "https://github.com/Oddadmix/kokoro-ios",
       "state" : {
-        "revision" : "bb5e3e3671ef550dc545a98f4a4c15f58ee649ec",
-        "version" : "1.0.5"
+        "branch" : "main",
+        "revision" : "c3c7da1950daed8298c0ea3a140775a6be3e64a3"
       }
     },
     {
@@ -24,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/ml-explore/mlx-swift",
       "state" : {
-        "revision" : "072b684acaae80b6a463abab3a103732f33774bf",
-        "version" : "0.29.1"
+        "revision" : "6ba4827fb82c97d012eec9ab4b2de21f85c3b33d",
+        "version" : "0.30.6"
       }
     },
     {
