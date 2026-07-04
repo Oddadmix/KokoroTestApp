@@ -81,9 +81,9 @@ struct ContentView: View {
               .id(message.id)
           }
 
-          if viewModel.speechRecognizer.isListening {
-            listeningBubble
-              .id("listening")
+          if viewModel.conversationState != .idle {
+            statusBubble
+              .id("status")
           }
 
           if let error = viewModel.speechRecognizer.errorMessage {
@@ -104,7 +104,7 @@ struct ContentView: View {
       .onChange(of: viewModel.speechRecognizer.transcript) { _, _ in
         scrollToBottom(proxy)
       }
-      .onChange(of: viewModel.speechRecognizer.isListening) { _, _ in
+      .onChange(of: viewModel.conversationState) { _, _ in
         scrollToBottom(proxy)
       }
     }
@@ -112,8 +112,8 @@ struct ContentView: View {
 
   private func scrollToBottom(_ proxy: ScrollViewProxy) {
     withAnimation(.easeOut(duration: 0.2)) {
-      if viewModel.speechRecognizer.isListening {
-        proxy.scrollTo("listening", anchor: .bottom)
+      if viewModel.conversationState != .idle {
+        proxy.scrollTo("status", anchor: .bottom)
       } else if let last = viewModel.conversation.last {
         proxy.scrollTo(last.id, anchor: .bottom)
       }
@@ -127,7 +127,7 @@ struct ContentView: View {
         .foregroundStyle(Color.accentColor)
       Text("Talk to Nabra")
         .font(.title3.weight(.semibold))
-      Text("Tap the mic and speak, or type a message.\nThe app replies with the \(viewModel.selectedVoice) voice.")
+      Text("Tap the mic to start a hands-free chat, or type a message.\nThe app replies with the \(viewModel.selectedVoice) voice.")
         .font(.subheadline)
         .foregroundStyle(.secondary)
         .multilineTextAlignment(.center)
@@ -136,25 +136,57 @@ struct ContentView: View {
     .padding(.top, 80)
   }
 
-  /// Bubble on the user's side showing the live transcript while recording
-  private var listeningBubble: some View {
-    HStack {
-      Spacer(minLength: 48)
+  /// A bubble reflecting the current turn: listening (with live transcript),
+  /// thinking, or speaking.
+  private var statusBubble: some View {
+    let onRight = viewModel.conversationState == .listening
+    return HStack {
+      if onRight { Spacer(minLength: 48) }
       HStack(spacing: 8) {
-        Image(systemName: "waveform")
+        Image(systemName: statusIcon)
           .symbolEffect(.variableColor.iterative)
-          .foregroundStyle(Color.accentColor)
-        Text(viewModel.speechRecognizer.transcript.isEmpty
-             ? "Listening…"
-             : viewModel.speechRecognizer.transcript)
+          .foregroundStyle(statusTint)
+        Text(statusText)
           .foregroundStyle(.primary)
       }
       .padding(.horizontal, 14)
       .padding(.vertical, 10)
       .background(
         RoundedRectangle(cornerRadius: 18, style: .continuous)
-          .fill(Color.accentColor.opacity(0.15))
+          .fill(statusTint.opacity(0.15))
       )
+      if !onRight { Spacer(minLength: 48) }
+    }
+  }
+
+  private var statusIcon: String {
+    switch viewModel.conversationState {
+    case .listening: return "waveform"
+    case .thinking:  return "ellipsis"
+    case .speaking:  return "speaker.wave.2.fill"
+    case .idle:      return "waveform"
+    }
+  }
+
+  private var statusTint: Color {
+    switch viewModel.conversationState {
+    case .listening: return viewModel.speechRecognizer.speechDetected ? .green : .accentColor
+    case .thinking:  return .orange
+    case .speaking:  return .blue
+    case .idle:      return .accentColor
+    }
+  }
+
+  private var statusText: String {
+    switch viewModel.conversationState {
+    case .listening:
+      return viewModel.speechRecognizer.transcript.isEmpty
+        ? "Listening…" : viewModel.speechRecognizer.transcript
+    case .thinking:  return "Thinking…"
+    case .speaking:
+      return viewModel.stringToFollowTheAudio.isEmpty
+        ? "Speaking…" : viewModel.stringToFollowTheAudio
+    case .idle:      return ""
     }
   }
 
@@ -174,17 +206,28 @@ struct ContentView: View {
         .onSubmit(send)
 
       if inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        // Mic button (red stop while recording)
+        // Mic button toggles the hands-free conversation (red stop while active)
         Button {
           inputFocused = false
-          viewModel.toggleListening()
+          viewModel.toggleHandsFree()
         } label: {
-          Image(systemName: viewModel.speechRecognizer.isListening ? "stop.fill" : "mic.fill")
+          Image(systemName: viewModel.isHandsFree ? "stop.fill" : "mic.fill")
             .font(.system(size: 17, weight: .semibold))
             .foregroundStyle(.white)
             .frame(width: 38, height: 38)
             .background(
-              Circle().fill(viewModel.speechRecognizer.isListening ? Color.red : Color.accentColor)
+              Circle().fill(viewModel.isHandsFree ? Color.red : Color.accentColor)
+            )
+            .overlay(
+              // Subtle pulse while a hands-free session is active
+              Circle()
+                .stroke(Color.red.opacity(0.35), lineWidth: 2)
+                .scaleEffect(viewModel.isHandsFree ? 1.35 : 1)
+                .opacity(viewModel.isHandsFree ? 0 : 1)
+                .animation(viewModel.isHandsFree
+                           ? .easeOut(duration: 1).repeatForever(autoreverses: false)
+                           : .default,
+                           value: viewModel.isHandsFree)
             )
         }
       } else {

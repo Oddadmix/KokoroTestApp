@@ -16,6 +16,14 @@ struct ChatMessage: Identifiable, Equatable {
   let text: String
 }
 
+/// Where we are in a hands-free conversation turn.
+enum ConversationState: Equatable {
+  case idle       // not in a turn
+  case listening  // mic open, waiting for / capturing speech
+  case thinking   // generating the reply (LLM + diacritizer)
+  case speaking   // playing the synthesized reply
+}
+
 /// The view model that manages text-to-speech functionality using the Kokoro TTS engine.
 /// - Loading and managing the Kokoro TTS model
 /// - Managing available voice options
@@ -63,8 +71,19 @@ final class TestAppModel: ObservableObject {
   /// Running transcript of the conversation (user + app turns)
   @Published var conversation: [ChatMessage] = []
 
+  /// True while a hands-free (auto listen → reply → listen) session is active.
+  @Published var isHandsFree = false
+
+  /// Current stage of the active turn, drives the UI status indicator.
+  @Published var conversationState: ConversationState = .idle
+
   /// Forwards nested ObservableObject changes (speechRecognizer) to SwiftUI
   private var cancellables = Set<AnyCancellable>()
+
+  /// When the current listen turn started, and how many restarts failed fast —
+  /// used to stop hands-free if recognition can't run (offline / Simulator).
+  private var lastListenStart: Date?
+  private var rapidListenFailures = 0
 
   var timer: Timer?
 
@@ -88,9 +107,33 @@ final class TestAppModel: ObservableObject {
       }
     #endif
 
-    // Conversation loop: when a spoken turn is transcribed, reply and speak it
+    // Conversation loop: a finished spoken turn → reply → speak → listen again
     speechRecognizer.onFinal = { [weak self] text in
       self?.sendText(text)
+    }
+    // No speech captured (VAD timeout). In hands-free, keep the mic alive —
+    // but bail out if the recognizer keeps failing instantly (e.g. no network,
+    // or the Simulator, where server-based Arabic recognition can't run).
+    speechRecognizer.onNoSpeech = { [weak self] in
+      guard let self else { return }
+      guard self.isHandsFree else { self.conversationState = .idle; return }
+
+      let elapsed = self.lastListenStart.map { Date().timeIntervalSince($0) } ?? 0
+      if elapsed < 2 {
+        self.rapidListenFailures += 1
+        if self.rapidListenFailures >= 3 {
+          self.isHandsFree = false
+          self.conversationState = .idle
+          return
+        }
+      } else {
+        self.rapidListenFailures = 0  // a real (long) silence, not a failure
+      }
+      // Delayed restart breaks any synchronous failure recursion and throttles.
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+        guard let self, self.isHandsFree else { return }
+        self.beginListeningTurn()
+      }
     }
     speechRecognizer.requestAuthorization()
     speechRecognizer.objectWillChange
@@ -160,8 +203,10 @@ final class TestAppModel: ObservableObject {
   /// Produces the app's reply for a user turn: the Nawah LLM generates an
   /// Arabic answer, then CATT restores tashkeel so the Nabra voice receives
   /// fully vowelized input. Falls back to echoing when a stage is missing.
-  private func respond(to text: String) -> String {
-    guard selectedVoice.hasPrefix("ar_") else { return text }
+  /// Runs off the main thread — `voiceName` is passed in to avoid touching
+  /// published state from a background context.
+  private func respond(to text: String, voiceName: String) -> String {
+    guard voiceName.hasPrefix("ar_") else { return text }
 
     var reply = text
     if let llm {
@@ -176,115 +221,166 @@ final class TestAppModel: ObservableObject {
     return reply
   }
 
-  /// Adds a user turn (typed or transcribed) to the conversation, generates
-  /// the app's reply, and speaks it.
+  /// Adds a user turn (typed or transcribed), generates the reply off the main
+  /// thread, then speaks it. In hands-free mode the mic reopens afterward.
   func sendText(_ text: String) {
     guard isReady else { return }
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return }
+
+    speechRecognizer.cancel()  // stop any open mic (e.g. typed mid-listen)
+    rapidListenFailures = 0    // a real turn arrived; recognition is working
     conversation.append(ChatMessage(role: .user, text: trimmed))
-    let reply = respond(to: trimmed)
-    conversation.append(ChatMessage(role: .app, text: reply))
-    say(reply)
-  }
+    conversationState = .thinking
 
-  /// Starts or stops a spoken conversation turn.
-  func toggleListening() {
-    guard isReady else { return }
-    if speechRecognizer.isListening {
-      speechRecognizer.stopListening()
-    } else {
-      playerNode.stop()
-      speechRecognizer.startListening()
-    }
-  }
-
-  /// Converts the provided text to speech and plays it through the audio engine.
-  /// - Parameter text: The text to be converted to speech
-  func say(_ text: String) {
-    // Generate audio using the selected voice
-    // Language is determined by voice name: 'ar_' prefix = Arabic, 'a' prefix = US English, otherwise GB English
-    let language: Language = selectedVoice.hasPrefix("ar_") ? .ar : (selectedVoice.first! == "a" ? .enUS : .enGB)
-    let (audio, tokenArray) = try! kokoroTTSEngine.generateAudio(voice: voices[selectedVoice + ".npy"]!, language: language, text: text)
-    
-    if let tokenArray {
-      for t in tokenArray {
-        print("\(t.text): \(t.start_ts, default: "UNK") - \(t.end_ts, default: "UNK")")
+    let voiceName = selectedVoice
+    Task.detached(priority: .userInitiated) { [weak self] in
+      guard let self else { return }
+      let reply = self.respond(to: trimmed, voiceName: voiceName)
+      await MainActor.run {
+        self.conversation.append(ChatMessage(role: .app, text: reply))
+        self.speak(reply) { [weak self] in self?.handleTurnFinished() }
       }
     }
-    
-    // Calculate audio length and performance metrics
+  }
+
+  // MARK: - Hands-free conversation
+
+  /// Toggles the hands-free session. On → the mic opens and each turn flows
+  /// automatically (listen → reply → listen). Off → everything stops.
+  func toggleHandsFree() {
+    guard isReady else { return }
+    if isHandsFree {
+      isHandsFree = false
+      speechRecognizer.cancel()
+      playerNode.stop()
+      stopKaraokeTimer()
+      conversationState = .idle
+    } else {
+      isHandsFree = true
+      beginListeningTurn()
+    }
+  }
+
+  /// Opens the mic for a new turn (VAD ends it automatically).
+  private func beginListeningTurn() {
+    guard isReady else { return }
+    playerNode.stop()
+    stopKaraokeTimer()
+    lastListenStart = Date()
+    conversationState = .listening
+    speechRecognizer.startListening()
+  }
+
+  /// Called after the reply finishes playing: reopen the mic if hands-free.
+  private func handleTurnFinished() {
+    if isHandsFree {
+      beginListeningTurn()
+    } else {
+      conversationState = .idle
+    }
+  }
+
+  /// Synthesizes `text` off the main thread, plays it, and calls `completion`
+  /// once playback has actually finished (so the mic can safely reopen).
+  func speak(_ text: String, then completion: (() -> Void)? = nil) {
+    guard let engine = kokoroTTSEngine else { completion?(); return }
+    // Stay in `.thinking` during synthesis; flip to `.speaking` when audio starts.
+
+    // Language from voice name: 'ar_' = Arabic, 'a…' = US English, else GB.
+    let language: Language = selectedVoice.hasPrefix("ar_")
+      ? .ar : (selectedVoice.first == "a" ? .enUS : .enGB)
+    let voice = voices[selectedVoice + ".npy"]
+
+    Task.detached(priority: .userInitiated) { [weak self] in
+      guard let self, let voice else { await MainActor.run { completion?() }; return }
+      let result = try? engine.generateAudio(voice: voice, language: language, text: text)
+      await MainActor.run {
+        guard let (audio, tokenArray) = result, !audio.isEmpty else {
+          completion?()
+          return
+        }
+        self.playAudio(audio, tokenArray: tokenArray, then: completion)
+      }
+    }
+  }
+
+  /// Plays already-synthesized samples and starts the karaoke follow-along.
+  private func playAudio(_ audio: [Float], tokenArray: [KokoroSwift.MToken]?, then completion: (() -> Void)?) {
+    conversationState = .speaking
     let sampleRate = Double(KokoroTTS.Constants.samplingRate)
     let audioLength = Double(audio.count) / sampleRate
-    // Log performance metrics
     print("Audio Length: " + String(format: "%.4f", audioLength))
     print("Real Time Factor: " + String(format: "%.2f", audioLength / (BenchmarkTimer.getTimeInSec(KokoroTTS.Constants.bm_TTS) ?? 1.0)))
 
-    // Create audio format (mono channel at the model's sample rate)
     let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)!
-    
-    // Create PCM buffer for the audio data
     guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(audio.count)) else {
       print("Couldn't create buffer")
+      completion?()
       return
     }
 
-    // Copy audio data into the buffer
     buffer.frameLength = buffer.frameCapacity
-    let channels = buffer.floatChannelData!
-    let dst: UnsafeMutablePointer<Float> = channels[0]
-    
-    // Safely copy audio samples to the buffer
+    let dst = buffer.floatChannelData![0]
     audio.withUnsafeBufferPointer { buf in
-        precondition(buf.baseAddress != nil)
-        let byteCount = buf.count * MemoryLayout<Float>.stride
-
-        UnsafeMutableRawPointer(dst)
-          .copyMemory(from: UnsafeRawPointer(buf.baseAddress!), byteCount: byteCount)
+      precondition(buf.baseAddress != nil)
+      UnsafeMutableRawPointer(dst)
+        .copyMemory(from: UnsafeRawPointer(buf.baseAddress!),
+                    byteCount: buf.count * MemoryLayout<Float>.stride)
     }
 
-    // Connect the player node to the audio engine's mixer
     audioEngine.connect(playerNode, to: audioEngine.mainMixerNode, format: format)
-    
-    // Start the audio engine
     do {
       try audioEngine.start()
     } catch {
       print("Audio engine failed to start: \(error.localizedDescription)")
+      completion?()
       return
     }
 
-    // Schedule and play the audio buffer
-    playerNode.scheduleBuffer(buffer, at: nil, options: .interrupts, completionHandler: nil)
-    playerNode.play()
-    
-    if let tokenArray {
-      stringToFollowTheAudio = ""
-      var currentToken = 0
-      var audioTime: Double = 0.0
-      var added = false
-      
-      timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] timer in
-        guard let self else { return }
-        audioTime += 0.1
-        
-        guard currentToken < tokenArray.count else {
-          timer.invalidate()
-          return
-        }
-        
-        let token = tokenArray[currentToken]
-                
-        if !added, let start = token.start_ts, start < audioTime {
-          stringToFollowTheAudio += token.text + (token.whitespace.isEmpty ? "" : " ")
-          added = true
-        }
-        
-        if let end = token.end_ts, audioTime >= end {
-          currentToken += 1
-          added = false
-        }
+    // Fire `completion` when the audio has actually played out, back on main.
+    playerNode.scheduleBuffer(buffer, at: nil, options: .interrupts,
+                              completionCallbackType: .dataPlayedBack) { [weak self] _ in
+      DispatchQueue.main.async {
+        self?.stopKaraokeTimer()
+        completion?()
       }
     }
+    playerNode.play()
+
+    startKaraokeTimer(tokenArray)
+  }
+
+  /// Reveals the spoken text token-by-token in sync with playback.
+  private func startKaraokeTimer(_ tokenArray: [KokoroSwift.MToken]?) {
+    stopKaraokeTimer()
+    guard let tokenArray else { return }
+    stringToFollowTheAudio = ""
+    var currentToken = 0
+    var audioTime: Double = 0.0
+    var added = false
+
+    timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] timer in
+      guard let self else { return }
+      audioTime += 0.1
+      guard currentToken < tokenArray.count else {
+        timer.invalidate()
+        return
+      }
+      let token = tokenArray[currentToken]
+      if !added, let start = token.start_ts, start < audioTime {
+        stringToFollowTheAudio += token.text + (token.whitespace.isEmpty ? "" : " ")
+        added = true
+      }
+      if let end = token.end_ts, audioTime >= end {
+        currentToken += 1
+        added = false
+      }
+    }
+  }
+
+  private func stopKaraokeTimer() {
+    timer?.invalidate()
+    timer = nil
   }
 }
