@@ -182,7 +182,7 @@ struct ContentView: View {
     case .listening:
       return viewModel.speechRecognizer.transcript.isEmpty
         ? "Listening…" : viewModel.speechRecognizer.transcript
-    case .thinking:  return "Thinking…"
+    case .thinking:  return viewModel.toolStatus ?? "Thinking…"
     case .speaking:
       return viewModel.stringToFollowTheAudio.isEmpty
         ? "Speaking…" : viewModel.stringToFollowTheAudio

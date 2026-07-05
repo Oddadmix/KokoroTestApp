@@ -45,8 +45,15 @@ final class TestAppModel: ObservableObject {
   /// On-device Arabic diacritizer (CATT) — set by loadModels
   private var diacritizer: ArabicDiacritizer?
 
-  /// On-device Nawah-50M Arabic chat LLM — set by loadModels
-  private var llm: NawahLLM?
+  /// On-device LFM2 tool-using agent (weather/currency/web search) — set by loadModels
+  private var agent: LFM2Agent?
+
+  /// Arabic system prompt: answer in Arabic, use tools when helpful.
+  private static let agentSystemPrompt =
+    "أنت مساعد صوتي ذكي لديك أدوات: get_weather لأسئلة الطقس، "
+    + "convert_currency لتحويل العملات، web_search للبحث عن الحقائق والمعلومات. "
+    + "استخدم الأداة المناسبة عند الحاجة. أجب دائماً باللغة العربية الفصحى فقط بإيجاز، "
+    + "حتى لو كانت نتائج الأدوات باللغة الإنجليزية."
 
   /// Array of voice names available for selection in the UI
   @Published var voiceNames: [String] = []
@@ -76,6 +83,9 @@ final class TestAppModel: ObservableObject {
 
   /// Current stage of the active turn, drives the UI status indicator.
   @Published var conversationState: ConversationState = .idle
+
+  /// Human-readable note about a tool the agent is currently running.
+  @Published var toolStatus: String?
 
   /// Forwards nested ObservableObject changes (speechRecognizer) to SwiftUI
   private var cancellables = Set<AnyCancellable>()
@@ -160,13 +170,27 @@ final class TestAppModel: ObservableObject {
     voiceNames = voices.keys.map { String($0.split(separator: ".")[0]) }.sorted(by: <)
     selectedVoice = voiceNames.contains("ar_msa") ? "ar_msa" : (voiceNames.first ?? "")
 
-    // Stage 3: Nawah chat LLM (104 MB)
+    // Stage 3: LFM2 agent LLM (438 MB) + tools
     setStage("Loading chat model…", progress: 0.60)
-    if let modelURL = Bundle.main.url(forResource: "nawah_50m_fp16", withExtension: "safetensors"),
-       let tokenizerURL = Bundle.main.url(forResource: "nawah_tokenizer", withExtension: "json") {
-      llm = await Task.detached { try? NawahLLM(modelPath: modelURL, tokenizerPath: tokenizerURL) }.value
+    if let modelURL = Bundle.main.url(forResource: "lfm2_230m_fp16", withExtension: "safetensors"),
+       let tokenizerURL = Bundle.main.url(forResource: "lfm2_tokenizer", withExtension: "json") {
+      let model = await Task.detached(priority: .userInitiated) {
+        try? LFM2Model(modelPath: modelURL, tokenizerPath: tokenizerURL)
+      }.value
+      if let model {
+        let agent = LFM2Agent(
+          model: model,
+          tools: [WeatherTool(), CurrencyTool(), WebSearchTool()],
+          system: Self.agentSystemPrompt)
+        agent.onToolUse = { [weak self] name, _ in
+          DispatchQueue.main.async { self?.toolStatus = Self.toolLabel(name) }
+        }
+        self.agent = agent
+      } else {
+        logPrint("LFM2 model failed to load")
+      }
     } else {
-      logPrint("Nawah LLM resources missing — replies will echo the input")
+      logPrint("LFM2 resources missing — replies will echo the input")
     }
 
     // Stage 4: CATT diacritizer (72 MB)
@@ -181,14 +205,15 @@ final class TestAppModel: ObservableObject {
     // instead of during the first real turn
     setStage("Warming up…", progress: 0.88)
     let warmupVoice = voices[selectedVoice + ".npy"]
-    let warmupLLM = llm
     let warmupDiacritizer = diacritizer
+    let warmupAgent = agent
     await Task.detached(priority: .userInitiated) {
       if let warmupVoice {
         _ = try? tts.generateAudio(voice: warmupVoice, language: .ar, text: "مَرْحَبًا")
       }
-      _ = warmupLLM?.reply(to: "مرحبا", maxTokens: 1)
       _ = warmupDiacritizer?.diacritize("مرحبا")
+      // A greeting won't trigger a tool call, so this only compiles kernels.
+      _ = await warmupAgent?.respond(to: "مرحبا")
     }.value
 
     setStage("Ready", progress: 1.0)
@@ -200,29 +225,26 @@ final class TestAppModel: ObservableObject {
     loadingProgress = progress
   }
 
-  /// Produces the app's reply for a user turn: the Nawah LLM generates an
-  /// Arabic answer, then CATT restores tashkeel so the Nabra voice receives
-  /// fully vowelized input. Falls back to echoing when a stage is missing.
+  /// Produces the app's reply for a user turn: the LFM2 agent generates an
+  /// answer (calling weather/currency/web-search tools when useful), then CATT
+  /// restores tashkeel so the Nabra voice receives fully vowelized Arabic.
   /// Runs off the main thread — `voiceName` is passed in to avoid touching
   /// published state from a background context.
-  private func respond(to text: String, voiceName: String) -> String {
-    guard voiceName.hasPrefix("ar_") else { return text }
-
+  private func respond(to text: String, voiceName: String) async -> String {
     var reply = text
-    if let llm {
-      let generated = llm.reply(to: text)
-      if !generated.isEmpty {
-        reply = generated
-      }
+    if let agent {
+      let generated = await agent.respond(to: text)
+      if !generated.isEmpty { reply = generated }
     }
-    if !ArabicDiacritizer.isDiacritized(reply), let diacritizer {
+    // Arabic voice path: diacritize for correct pronunciation.
+    if voiceName.hasPrefix("ar_"), !ArabicDiacritizer.isDiacritized(reply), let diacritizer {
       reply = diacritizer.diacritize(reply)
     }
     return reply
   }
 
-  /// Adds a user turn (typed or transcribed), generates the reply off the main
-  /// thread, then speaks it. In hands-free mode the mic reopens afterward.
+  /// Adds a user turn (typed or transcribed), runs the agent off the main
+  /// thread, then speaks the reply. In hands-free mode the mic reopens after.
   func sendText(_ text: String) {
     guard isReady else { return }
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -232,15 +254,27 @@ final class TestAppModel: ObservableObject {
     rapidListenFailures = 0    // a real turn arrived; recognition is working
     conversation.append(ChatMessage(role: .user, text: trimmed))
     conversationState = .thinking
+    toolStatus = nil
 
     let voiceName = selectedVoice
     Task.detached(priority: .userInitiated) { [weak self] in
       guard let self else { return }
-      let reply = self.respond(to: trimmed, voiceName: voiceName)
+      let reply = await self.respond(to: trimmed, voiceName: voiceName)
       await MainActor.run {
+        self.toolStatus = nil
         self.conversation.append(ChatMessage(role: .app, text: reply))
         self.speak(reply) { [weak self] in self?.handleTurnFinished() }
       }
+    }
+  }
+
+  /// Short human-readable label for a tool that's running (shown while thinking).
+  private static func toolLabel(_ name: String) -> String {
+    switch name {
+    case "get_weather": return "🌦️ يتحقق من الطقس…"
+    case "convert_currency": return "💱 يحوّل العملة…"
+    case "web_search": return "🔎 يبحث في الويب…"
+    default: return "🔧 \(name)…"
     }
   }
 
