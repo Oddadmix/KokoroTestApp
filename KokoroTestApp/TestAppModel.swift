@@ -48,12 +48,16 @@ final class TestAppModel: ObservableObject {
   /// On-device LFM2 tool-using agent (weather/currency/web search) — set by loadModels
   private var agent: LFM2Agent?
 
-  /// Arabic system prompt: answer in Arabic, use tools when helpful.
+  /// Arabic system prompt: answer known facts directly, use tools only when
+  /// needed, and always reply in Arabic.
   private static let agentSystemPrompt =
-    "أنت مساعد صوتي ذكي لديك أدوات: get_weather لأسئلة الطقس، "
-    + "convert_currency لتحويل العملات، web_search للبحث عن الحقائق والمعلومات. "
-    + "استخدم الأداة المناسبة عند الحاجة. أجب دائماً باللغة العربية الفصحى فقط بإيجاز، "
-    + "حتى لو كانت نتائج الأدوات باللغة الإنجليزية."
+    "أنت مساعد صوتي ذكي. أجب على أسئلة المعرفة العامة مباشرةً من معرفتك. "
+    + "استخدم الأدوات فقط عند الضرورة: get_weather للطقس، convert_currency لتحويل "
+    + "العملات، web_search للأحداث الجارية أو المعلومات التي لا تعرفها. "
+    + "أجب دائماً باللغة العربية الفصحى فقط بإيجاز، حتى لو كانت نتائج الأدوات بالإنجليزية."
+
+  /// Spoken when the agent can't produce an answer (e.g. tools returned nothing).
+  private static let agentFallback = "عذراً، لم أتمكن من إيجاد إجابة."
 
   /// Array of voice names available for selection in the UI
   @Published var voiceNames: [String] = []
@@ -181,7 +185,8 @@ final class TestAppModel: ObservableObject {
         let agent = LFM2Agent(
           model: model,
           tools: [WeatherTool(), CurrencyTool(), WebSearchTool()],
-          system: Self.agentSystemPrompt)
+          system: Self.agentSystemPrompt,
+          fallback: Self.agentFallback)
         agent.onToolUse = { [weak self] name, _ in
           DispatchQueue.main.async { self?.toolStatus = Self.toolLabel(name) }
         }
@@ -205,7 +210,7 @@ final class TestAppModel: ObservableObject {
     // instead of during the first real turn
     setStage("Warming up…", progress: 0.88)
     let warmupVoice = voices[selectedVoice + ".npy"]
-    let warmupDiacritizer = diacritizer
+   		 let warmupDiacritizer = diacritizer
     let warmupAgent = agent
     await Task.detached(priority: .userInitiated) {
       if let warmupVoice {
