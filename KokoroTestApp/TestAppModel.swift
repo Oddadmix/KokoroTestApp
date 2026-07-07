@@ -175,8 +175,12 @@ final class TestAppModel: ObservableObject {
       if let model {
         let agent = EmhotobAgent(
           model: model,
-          tools: [EmhotobWeatherTool(), GeneratePasswordTool(), CalculateBMITool(),
-                  CalculateTipTool(), ExchangeRateTool()])
+          // Ordered specific → general (keyword router picks the first match).
+          tools: [PrayerTimesTool(), HijriDateTool(), CalculateZakatTool(),
+                  ConvertTemperatureTool(), CalculateAgeTool(), CalculateDiscountTool(),
+                  CalculateVATTool(), CalculateTipTool(), CalculatePercentageTool(),
+                  DaysUntilTool(), RandomNumberTool(), EmhotobWeatherTool(),
+                  GeneratePasswordTool(), CalculateBMITool(), ExchangeRateTool()])
         agent.onToolUse = { [weak self] name, _ in
           DispatchQueue.main.async { self?.toolStatus = Self.toolLabel(name) }
         }
@@ -271,6 +275,16 @@ final class TestAppModel: ObservableObject {
     case "calculate_bmi": return "⚖️ يحسب مؤشر الكتلة…"
     case "calculate_tip": return "🧾 يحسب البقشيش…"
     case "get_exchange_rate": return "💱 يجلب سعر الصرف…"
+    case "get_prayer_times": return "🕌 يجلب مواقيت الصلاة…"
+    case "convert_to_hijri": return "🌙 يحوّل للتاريخ الهجري…"
+    case "calculate_zakat": return "🤲 يحسب الزكاة…"
+    case "convert_temperature": return "🌡️ يحوّل درجة الحرارة…"
+    case "calculate_age": return "🎂 يحسب العمر…"
+    case "calculate_discount": return "🏷️ يحسب الخصم…"
+    case "calculate_vat": return "🧮 يحسب الضريبة…"
+    case "calculate_percentage": return "٪ يحسب النسبة…"
+    case "days_until": return "📅 يحسب الأيام المتبقية…"
+    case "random_number": return "🎲 يختار رقمًا…"
     default: return "🔧 \(name)…"
     }
   }
