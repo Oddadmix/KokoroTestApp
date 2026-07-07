@@ -13,8 +13,8 @@
 		52CA91A62E8A6D4D00C7951A /* kokoro-v1_0.safetensors in Resources */ = {isa = PBXBuildFile; fileRef = 52CA91A52E8A6D4D00C7951A /* kokoro-v1_0.safetensors */; };
 		52E385B32E9EDABD00B10D6C /* voices.npz in Resources */ = {isa = PBXBuildFile; fileRef = 52E385B22E9EDABD00B10D6C /* voices.npz */; };
 		52E385B52F30C10000B10D6C /* catt_eo.safetensors in Resources */ = {isa = PBXBuildFile; fileRef = 52E385B42F30C10000B10D6C /* catt_eo.safetensors */; };
-		52E385C12F31000000B10D6C /* lfm2_230m_fp16.safetensors in Resources */ = {isa = PBXBuildFile; fileRef = 52E385C02F31000000B10D6C /* lfm2_230m_fp16.safetensors */; };
-		52E385C32F31000000B10D6C /* lfm2_tokenizer.json in Resources */ = {isa = PBXBuildFile; fileRef = 52E385C22F31000000B10D6C /* lfm2_tokenizer.json */; };
+		52E385D12F32000000B10D6C /* emhotob_50m_fp16.safetensors in Resources */ = {isa = PBXBuildFile; fileRef = 52E385D02F32000000B10D6C /* emhotob_50m_fp16.safetensors */; };
+		52E385D32F32000000B10D6C /* emhotob_tokenizer.json in Resources */ = {isa = PBXBuildFile; fileRef = 52E385D22F32000000B10D6C /* emhotob_tokenizer.json */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -36,8 +36,8 @@
 		52CA91A52E8A6D4D00C7951A /* kokoro-v1_0.safetensors */ = {isa = PBXFileReference; lastKnownFileType = file; path = "kokoro-v1_0.safetensors"; sourceTree = "<group>"; };
 		52E385B22E9EDABD00B10D6C /* voices.npz */ = {isa = PBXFileReference; lastKnownFileType = file; path = voices.npz; sourceTree = "<group>"; };
 		52E385B42F30C10000B10D6C /* catt_eo.safetensors */ = {isa = PBXFileReference; lastKnownFileType = file; path = "catt_eo.safetensors"; sourceTree = "<group>"; };
-		52E385C02F31000000B10D6C /* lfm2_230m_fp16.safetensors */ = {isa = PBXFileReference; lastKnownFileType = file; path = "lfm2_230m_fp16.safetensors"; sourceTree = "<group>"; };
-		52E385C22F31000000B10D6C /* lfm2_tokenizer.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "lfm2_tokenizer.json"; sourceTree = "<group>"; };
+		52E385D02F32000000B10D6C /* emhotob_50m_fp16.safetensors */ = {isa = PBXFileReference; lastKnownFileType = file; path = "emhotob_50m_fp16.safetensors"; sourceTree = "<group>"; };
+		52E385D22F32000000B10D6C /* emhotob_tokenizer.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "emhotob_tokenizer.json"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -92,8 +92,8 @@
 				52E385B22E9EDABD00B10D6C /* voices.npz */,
 				52CA91A52E8A6D4D00C7951A /* kokoro-v1_0.safetensors */,
 				52E385B42F30C10000B10D6C /* catt_eo.safetensors */,
-				52E385C02F31000000B10D6C /* lfm2_230m_fp16.safetensors */,
-				52E385C22F31000000B10D6C /* lfm2_tokenizer.json */,
+				52E385D02F32000000B10D6C /* emhotob_50m_fp16.safetensors */,
+				52E385D22F32000000B10D6C /* emhotob_tokenizer.json */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -171,8 +171,8 @@
 			files = (
 				52E385B32E9EDABD00B10D6C /* voices.npz in Resources */,
 				52E385B52F30C10000B10D6C /* catt_eo.safetensors in Resources */,
-				52E385C12F31000000B10D6C /* lfm2_230m_fp16.safetensors in Resources */,
-				52E385C32F31000000B10D6C /* lfm2_tokenizer.json in Resources */,
+				52E385D12F32000000B10D6C /* emhotob_50m_fp16.safetensors in Resources */,
+				52E385D32F32000000B10D6C /* emhotob_tokenizer.json in Resources */,
 				52CA91A62E8A6D4D00C7951A /* kokoro-v1_0.safetensors in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

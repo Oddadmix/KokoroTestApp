@@ -45,19 +45,10 @@ final class TestAppModel: ObservableObject {
   /// On-device Arabic diacritizer (CATT) — set by loadModels
   private var diacritizer: ArabicDiacritizer?
 
-  /// On-device LFM2 tool-using agent (weather/currency/web search) — set by loadModels
-  private var agent: LFM2Agent?
-
-  /// Arabic system prompt: answer known facts directly, use tools only when
-  /// needed, and always reply in Arabic.
-  private static let agentSystemPrompt =
-    "أنت مساعد صوتي ذكي. أجب على أسئلة المعرفة العامة مباشرةً من معرفتك. "
-    + "استخدم الأدوات فقط عند الضرورة: get_weather للطقس، convert_currency لتحويل "
-    + "العملات، web_search للأحداث الجارية أو المعلومات التي لا تعرفها. "
-    + "أجب دائماً باللغة العربية الفصحى فقط بإيجاز، حتى لو كانت نتائج الأدوات بالإنجليزية."
-
-  /// Spoken when the agent can't produce an answer (e.g. tools returned nothing).
-  private static let agentFallback = "عذراً، لم أتمكن من إيجاد إجابة."
+  /// On-device Emhotob-50M Arabic tool-calling agent — set by loadModels.
+  /// Tools: password, BMI, tip, live exchange rate. Built from a from-scratch
+  /// 50M model; a keyword router exposes one tool per turn (else plain chat).
+  private var agent: EmhotobAgent?
 
   /// Array of voice names available for selection in the UI
   @Published var voiceNames: [String] = []
@@ -174,28 +165,27 @@ final class TestAppModel: ObservableObject {
     voiceNames = voices.keys.map { String($0.split(separator: ".")[0]) }.sorted(by: <)
     selectedVoice = voiceNames.contains("ar_msa") ? "ar_msa" : (voiceNames.first ?? "")
 
-    // Stage 3: LFM2 agent LLM (438 MB) + tools
+    // Stage 3: Emhotob-50M tool-calling agent (104 MB) + tools
     setStage("Loading chat model…", progress: 0.60)
-    if let modelURL = Bundle.main.url(forResource: "lfm2_230m_fp16", withExtension: "safetensors"),
-       let tokenizerURL = Bundle.main.url(forResource: "lfm2_tokenizer", withExtension: "json") {
+    if let modelURL = Bundle.main.url(forResource: "emhotob_50m_fp16", withExtension: "safetensors"),
+       let tokenizerURL = Bundle.main.url(forResource: "emhotob_tokenizer", withExtension: "json") {
       let model = await Task.detached(priority: .userInitiated) {
-        try? LFM2Model(modelPath: modelURL, tokenizerPath: tokenizerURL)
+        try? NawahLLM(modelPath: modelURL, tokenizerPath: tokenizerURL)
       }.value
       if let model {
-        let agent = LFM2Agent(
+        let agent = EmhotobAgent(
           model: model,
-          tools: [WeatherTool(), CurrencyTool(), WebSearchTool()],
-          system: Self.agentSystemPrompt,
-          fallback: Self.agentFallback)
+          tools: [EmhotobWeatherTool(), GeneratePasswordTool(), CalculateBMITool(),
+                  CalculateTipTool(), ExchangeRateTool()])
         agent.onToolUse = { [weak self] name, _ in
           DispatchQueue.main.async { self?.toolStatus = Self.toolLabel(name) }
         }
         self.agent = agent
       } else {
-        logPrint("LFM2 model failed to load")
+        logPrint("Emhotob model failed to load")
       }
     } else {
-      logPrint("LFM2 resources missing — replies will echo the input")
+      logPrint("Emhotob resources missing — replies will echo the input")
     }
 
     // Stage 4: CATT diacritizer (72 MB)
@@ -230,8 +220,8 @@ final class TestAppModel: ObservableObject {
     loadingProgress = progress
   }
 
-  /// Produces the app's reply for a user turn: the LFM2 agent generates an
-  /// answer (calling weather/currency/web-search tools when useful), then CATT
+  /// Produces the app's reply for a user turn: the Emhotob agent generates an
+  /// answer (calling a password/BMI/tip/exchange tool when useful), then CATT
   /// restores tashkeel so the Nabra voice receives fully vowelized Arabic.
   /// Runs off the main thread — `voiceName` is passed in to avoid touching
   /// published state from a background context.
@@ -277,8 +267,10 @@ final class TestAppModel: ObservableObject {
   private static func toolLabel(_ name: String) -> String {
     switch name {
     case "get_weather": return "🌦️ يتحقق من الطقس…"
-    case "convert_currency": return "💱 يحوّل العملة…"
-    case "web_search": return "🔎 يبحث في الويب…"
+    case "generate_password": return "🔑 ينشئ كلمة مرور…"
+    case "calculate_bmi": return "⚖️ يحسب مؤشر الكتلة…"
+    case "calculate_tip": return "🧾 يحسب البقشيش…"
+    case "get_exchange_rate": return "💱 يجلب سعر الصرف…"
     default: return "🔧 \(name)…"
     }
   }
