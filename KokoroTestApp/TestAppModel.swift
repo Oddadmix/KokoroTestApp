@@ -177,10 +177,13 @@ final class TestAppModel: ObservableObject {
           model: model,
           // Ordered specific → general (keyword router picks the first match).
           tools: [PrayerTimesTool(), HijriDateTool(), CalculateZakatTool(),
-                  ConvertTemperatureTool(), CalculateAgeTool(), CalculateDiscountTool(),
-                  CalculateVATTool(), CalculateTipTool(), CalculatePercentageTool(),
-                  DaysUntilTool(), RandomNumberTool(), EmhotobWeatherTool(),
-                  GeneratePasswordTool(), CalculateBMITool(), ExchangeRateTool()])
+                  ConvertTemperatureTool(), ConvertLengthTool(), ConvertWeightTool(),
+                  CalculateAgeTool(), CalculateDiscountTool(), CalculateVATTool(),
+                  SplitBillTool(), CalculateTipTool(), CalculatePercentageTool(),
+                  SimpleInterestTool(), DaysUntilTool(), DayOfWeekTool(), CountWordsTool(),
+                  CalculateSpeedTool(), RandomNumberTool(), FlipCoinTool(),
+                  EmhotobWeatherTool(), GeneratePasswordTool(), CalculateBMITool(),
+                  ExchangeRateTool()])
         agent.onToolUse = { [weak self] name, _ in
           DispatchQueue.main.async { self?.toolStatus = Self.toolLabel(name) }
         }
@@ -285,6 +288,14 @@ final class TestAppModel: ObservableObject {
     case "calculate_percentage": return "٪ يحسب النسبة…"
     case "days_until": return "📅 يحسب الأيام المتبقية…"
     case "random_number": return "🎲 يختار رقمًا…"
+    case "split_bill": return "🧾 يقسّم الفاتورة…"
+    case "convert_length": return "📏 يحوّل الطول…"
+    case "convert_weight": return "⚖️ يحوّل الوزن…"
+    case "calculate_simple_interest": return "🏦 يحسب الفائدة…"
+    case "count_words": return "🔢 يعدّ الكلمات…"
+    case "day_of_week": return "🗓️ يحدّد اليوم…"
+    case "calculate_speed": return "🚗 يحسب السرعة…"
+    case "flip_coin": return "🪙 يقلب العملة…"
     default: return "🔧 \(name)…"
     }
   }
