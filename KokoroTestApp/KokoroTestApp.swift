@@ -10,12 +10,12 @@ struct KokoroTestApp: App {
     
   /// Initializes the application and configures MLX GPU settings.
   init() {
-    // Configure MLX GPU cache limit (50 MB)
-    // Memory.cacheLimit = 50 * 1024 * 1024
-    // Configure MLX GPU memory limit (900 MB)
-    // Memory.memoryLimit = 900 * 1024 * 1024      
-    GPU.set(cacheLimit: 50 * 1024 * 1024)
-    GPU.set(memoryLimit: 900 * 1024 * 1024)
+    // MLX GPU limits. The resident model weights alone are ~940 MB (Kokoro 312
+    // + Emhotob 104 + CATT 72 + LFM2-VL ~450), so the old 900 MB memory limit
+    // was below the working set and forced constant eviction during VLM
+    // inference. Raise it to leave headroom for the vision tower's activations.
+    GPU.set(cacheLimit: 64 * 1024 * 1024)
+    GPU.set(memoryLimit: 1800 * 1024 * 1024)
   }
 
   var body: some Scene {

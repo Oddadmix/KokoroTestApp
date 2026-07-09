@@ -88,6 +88,10 @@ final class TestAppModel: ObservableObject {
   /// VLM download/load progress in 0…1 (only meaningful while `visionLoading`).
   @Published var visionProgress: Double = 0
 
+  /// The last VLM error (load or describe), surfaced on the camera screen so
+  /// failures are diagnosable instead of a silent "couldn't analyze".
+  @Published var visionError: String?
+
   /// Running transcript of the conversation (user + app turns)
   @Published var conversation: [ChatMessage] = []
 
@@ -379,6 +383,7 @@ final class TestAppModel: ObservableObject {
     // Camera mode and voice-only hands-free are mutually exclusive.
     if isHandsFree { isHandsFree = false; speechRecognizer.cancel() }
     isCameraMode = true
+    visionError = nil
     camera.start()
 
     if vision.isLoaded {
@@ -393,7 +398,8 @@ final class TestAppModel: ObservableObject {
             Task { @MainActor in self.visionProgress = fraction }
           }
         } catch {
-          logPrint("VLM failed to load: \(error.localizedDescription)")
+          logPrint("VLM failed to load: \(error)")
+          self.visionError = "تعذّر تحميل النموذج: \(error)"
         }
         self.visionLoading = false
         if self.isCameraMode { self.beginListeningTurn() }
@@ -420,6 +426,7 @@ final class TestAppModel: ObservableObject {
 
     speechRecognizer.cancel()
     rapidListenFailures = 0
+    visionError = nil
     conversation.append(ChatMessage(role: .user, text: trimmed))
     conversationState = .thinking
     toolStatus = "👁️ ينظر إلى ما تراه الكاميرا…"
@@ -445,6 +452,8 @@ final class TestAppModel: ObservableObject {
     do {
       reply = try await vision.describe(frame, question: prompt)
     } catch {
+      logPrint("VLM describe failed: \(error)")
+      visionError = "خطأ في التحليل: \(error)"
       reply = "عذرًا، تعذّر تحليل الصورة."
     }
     reply = reply.trimmingCharacters(in: .whitespacesAndNewlines)

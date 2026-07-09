@@ -26,6 +26,9 @@ struct CameraScreen: View {
       VStack(spacing: 0) {
         topBar
         Spacer()
+        if let error = viewModel.visionError {
+          errorBanner(error)
+        }
         if viewModel.visionLoading {
           loadingCard
         } else {
@@ -143,6 +146,20 @@ struct CameraScreen: View {
         ? "يتحدّث…" : viewModel.stringToFollowTheAudio
     case .idle:      return "الكاميرا متوقفة"
     }
+  }
+
+  // MARK: - Error banner (raw VLM error, for diagnosis)
+
+  private func errorBanner(_ text: String) -> some View {
+    Text(text)
+      .font(.caption.monospaced())
+      .foregroundStyle(.white)
+      .multilineTextAlignment(.leading)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(12)
+      .background(.red.opacity(0.85), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+      .padding(.bottom, 10)
+      .textSelection(.enabled)
   }
 
   // MARK: - Permission denied
