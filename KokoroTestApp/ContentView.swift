@@ -40,6 +40,9 @@ struct ContentView: View {
           }
         }
       }
+      .fullScreenCover(isPresented: $viewModel.isCameraMode) {
+        CameraScreen(viewModel: viewModel)
+      }
     }
   }
 
@@ -206,6 +209,18 @@ struct ContentView: View {
         .onSubmit(send)
 
       if inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        // Camera button opens the vision loop (ask about what the camera sees)
+        Button {
+          inputFocused = false
+          viewModel.toggleCamera()
+        } label: {
+          Image(systemName: "camera.fill")
+            .font(.system(size: 17, weight: .semibold))
+            .foregroundStyle(Color.accentColor)
+            .frame(width: 38, height: 38)
+            .background(Circle().fill(Color(.systemGray6)))
+        }
+
         // Mic button toggles the hands-free conversation (red stop while active)
         Button {
           inputFocused = false

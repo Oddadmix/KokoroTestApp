@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreImage
 import MLX
 import SwiftUI
 import KokoroSwift
@@ -70,6 +71,23 @@ final class TestAppModel: ObservableObject {
   /// Speech-to-text for the conversation demo (Arabic by default)
   let speechRecognizer = SpeechRecognizer()
 
+  /// On-device vision-language model (LFM2-VL) — loaded lazily the first time
+  /// camera mode opens.
+  let vision = VisionModel()
+
+  /// Live back-camera feed used in camera mode.
+  let camera = CameraController()
+
+  /// True while the camera is open and each spoken question is answered about
+  /// what the camera sees (instead of the normal chat agent).
+  @Published var isCameraMode = false
+
+  /// True while the VLM weights are downloading/loading (first camera open).
+  @Published var visionLoading = false
+
+  /// VLM download/load progress in 0…1 (only meaningful while `visionLoading`).
+  @Published var visionProgress: Double = 0
+
   /// Running transcript of the conversation (user + app turns)
   @Published var conversation: [ChatMessage] = []
 
@@ -112,22 +130,26 @@ final class TestAppModel: ObservableObject {
       }
     #endif
 
-    // Conversation loop: a finished spoken turn → reply → speak → listen again
+    // Conversation loop: a finished spoken turn → reply → speak → listen again.
+    // In camera mode the question is answered about what the camera sees.
     speechRecognizer.onFinal = { [weak self] text in
-      self?.sendText(text)
+      guard let self else { return }
+      if self.isCameraMode { self.askAboutImage(text) } else { self.sendText(text) }
     }
     // No speech captured (VAD timeout). In hands-free, keep the mic alive —
     // but bail out if the recognizer keeps failing instantly (e.g. no network,
     // or the Simulator, where server-based Arabic recognition can't run).
     speechRecognizer.onNoSpeech = { [weak self] in
       guard let self else { return }
-      guard self.isHandsFree else { self.conversationState = .idle; return }
+      guard self.autoListen else { self.conversationState = .idle; return }
 
       let elapsed = self.lastListenStart.map { Date().timeIntervalSince($0) } ?? 0
       if elapsed < 2 {
         self.rapidListenFailures += 1
         if self.rapidListenFailures >= 3 {
+          // Recognition can't run (offline / Simulator): stop the mic loop.
           self.isHandsFree = false
+          if self.isCameraMode { self.closeCamera() }
           self.conversationState = .idle
           return
         }
@@ -136,12 +158,16 @@ final class TestAppModel: ObservableObject {
       }
       // Delayed restart breaks any synchronous failure recursion and throttles.
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-        guard let self, self.isHandsFree else { return }
+        guard let self, self.autoListen else { return }
         self.beginListeningTurn()
       }
     }
     speechRecognizer.requestAuthorization()
     speechRecognizer.objectWillChange
+      .sink { [weak self] _ in self?.objectWillChange.send() }
+      .store(in: &cancellables)
+    // Surface camera state (isRunning / permissionDenied) to SwiftUI.
+    camera.objectWillChange
       .sink { [weak self] _ in self?.objectWillChange.send() }
       .store(in: &cancellables)
 
@@ -328,13 +354,110 @@ final class TestAppModel: ObservableObject {
     speechRecognizer.startListening()
   }
 
-  /// Called after the reply finishes playing: reopen the mic if hands-free.
+  /// Called after the reply finishes playing: reopen the mic if a mic loop
+  /// (hands-free voice chat or camera mode) is active.
   private func handleTurnFinished() {
-    if isHandsFree {
+    if autoListen {
       beginListeningTurn()
     } else {
       conversationState = .idle
     }
+  }
+
+  /// True while any mode that auto-reopens the mic after each turn is active.
+  private var autoListen: Bool { isHandsFree || isCameraMode }
+
+  // MARK: - Camera (vision) mode
+
+  /// Opens or closes camera mode. On open: start the camera, load the VLM if
+  /// needed (showing progress), then begin listening. Each spoken question is
+  /// answered about what the camera currently sees, spoken back in Nabra's voice.
+  func toggleCamera() {
+    guard isReady else { return }
+    if isCameraMode { closeCamera(); return }
+
+    // Camera mode and voice-only hands-free are mutually exclusive.
+    if isHandsFree { isHandsFree = false; speechRecognizer.cancel() }
+    isCameraMode = true
+    camera.start()
+
+    if vision.isLoaded {
+      beginListeningTurn()
+    } else {
+      visionLoading = true
+      visionProgress = 0
+      Task { [weak self] in
+        guard let self else { return }
+        do {
+          try await self.vision.load { fraction in
+            Task { @MainActor in self.visionProgress = fraction }
+          }
+        } catch {
+          logPrint("VLM failed to load: \(error.localizedDescription)")
+        }
+        self.visionLoading = false
+        if self.isCameraMode { self.beginListeningTurn() }
+      }
+    }
+  }
+
+  /// Tears down camera mode: stop the mic, playback, and the camera feed.
+  private func closeCamera() {
+    isCameraMode = false
+    speechRecognizer.cancel()
+    playerNode.stop()
+    stopKaraokeTimer()
+    camera.stop()
+    conversationState = .idle
+  }
+
+  /// Snaps the current camera frame and asks the VLM `question` about it, then
+  /// speaks the answer. In camera mode the mic reopens afterwards.
+  func askAboutImage(_ question: String) {
+    guard isReady else { return }
+    let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return }
+
+    speechRecognizer.cancel()
+    rapidListenFailures = 0
+    conversation.append(ChatMessage(role: .user, text: trimmed))
+    conversationState = .thinking
+    toolStatus = "👁️ ينظر إلى ما تراه الكاميرا…"
+
+    let frame = camera.snapshot()
+    let voiceName = selectedVoice
+    Task { [weak self] in
+      guard let self else { return }
+      let reply = await self.answerAboutImage(question: trimmed, frame: frame, voiceName: voiceName)
+      self.toolStatus = nil
+      self.conversation.append(ChatMessage(role: .app, text: reply))
+      self.speak(reply) { [weak self] in self?.handleTurnFinished() }
+    }
+  }
+
+  /// Runs the VLM on `frame` and returns an Arabic, diacritized answer ready
+  /// for the Nabra voice. `await`ing the model yields the main actor, so the UI
+  /// stays responsive during generation.
+  private func answerAboutImage(question: String, frame: CIImage?, voiceName: String) async -> String {
+    guard let frame else { return diacritizedForVoice("لَمْ أَلْتَقِطْ صُورَةً بَعْد، حَاوِلْ مَرَّةً أُخْرَى.", voiceName) }
+    let prompt = "انظر إلى الصورة وأجب بإيجاز باللغة العربية عن السؤال التالي: \(question)"
+    var reply: String
+    do {
+      reply = try await vision.describe(frame, question: prompt)
+    } catch {
+      reply = "عذرًا، تعذّر تحليل الصورة."
+    }
+    reply = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+    if reply.isEmpty { reply = "لا أستطيع وصف ذلك." }
+    return diacritizedForVoice(reply, voiceName)
+  }
+
+  /// Restores tashkeel for an Arabic voice so pronunciation is correct.
+  private func diacritizedForVoice(_ text: String, _ voiceName: String) -> String {
+    if voiceName.hasPrefix("ar_"), !ArabicDiacritizer.isDiacritized(text), let diacritizer {
+      return diacritizer.diacritize(text)
+    }
+    return text
   }
 
   /// Synthesizes `text` off the main thread, plays it, and calls `completion`
