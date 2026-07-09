@@ -11,6 +11,8 @@
 		529799672F2FD53500435877 /* KokoroSwift in Embed Frameworks */ = {isa = PBXBuildFile; productRef = 529799652F2FD51000435877 /* KokoroSwift */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		529799682F2FD60000435877 /* MLXUtilsLibrary in Frameworks */ = {isa = PBXBuildFile; productRef = 529799692F2FD60000435877 /* MLXUtilsLibrary */; };
 		52CA91A62E8A6D4D00C7951A /* kokoro-v1_0.safetensors in Resources */ = {isa = PBXBuildFile; fileRef = 52CA91A52E8A6D4D00C7951A /* kokoro-v1_0.safetensors */; };
+		52D0FACE00000000000000A4 /* MLXVLM in Frameworks */ = {isa = PBXBuildFile; productRef = 52D0FACE00000000000000A2 /* MLXVLM */; };
+		52D0FACE00000000000000A5 /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = 52D0FACE00000000000000A3 /* MLXLMCommon */; };
 		52E385B32E9EDABD00B10D6C /* voices.npz in Resources */ = {isa = PBXBuildFile; fileRef = 52E385B22E9EDABD00B10D6C /* voices.npz */; };
 		52E385B52F30C10000B10D6C /* catt_eo.safetensors in Resources */ = {isa = PBXBuildFile; fileRef = 52E385B42F30C10000B10D6C /* catt_eo.safetensors */; };
 		52E385D12F32000000B10D6C /* emhotob_50m_fp16.safetensors in Resources */ = {isa = PBXBuildFile; fileRef = 52E385D02F32000000B10D6C /* emhotob_50m_fp16.safetensors */; };
@@ -35,9 +37,9 @@
 		5247E6922E8A5478003F2FA4 /* KokoroTestApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KokoroTestApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		52CA91A52E8A6D4D00C7951A /* kokoro-v1_0.safetensors */ = {isa = PBXFileReference; lastKnownFileType = file; path = "kokoro-v1_0.safetensors"; sourceTree = "<group>"; };
 		52E385B22E9EDABD00B10D6C /* voices.npz */ = {isa = PBXFileReference; lastKnownFileType = file; path = voices.npz; sourceTree = "<group>"; };
-		52E385B42F30C10000B10D6C /* catt_eo.safetensors */ = {isa = PBXFileReference; lastKnownFileType = file; path = "catt_eo.safetensors"; sourceTree = "<group>"; };
-		52E385D02F32000000B10D6C /* emhotob_50m_fp16.safetensors */ = {isa = PBXFileReference; lastKnownFileType = file; path = "emhotob_50m_fp16.safetensors"; sourceTree = "<group>"; };
-		52E385D22F32000000B10D6C /* emhotob_tokenizer.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "emhotob_tokenizer.json"; sourceTree = "<group>"; };
+		52E385B42F30C10000B10D6C /* catt_eo.safetensors */ = {isa = PBXFileReference; lastKnownFileType = file; path = catt_eo.safetensors; sourceTree = "<group>"; };
+		52E385D02F32000000B10D6C /* emhotob_50m_fp16.safetensors */ = {isa = PBXFileReference; lastKnownFileType = file; path = emhotob_50m_fp16.safetensors; sourceTree = "<group>"; };
+		52E385D22F32000000B10D6C /* emhotob_tokenizer.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = emhotob_tokenizer.json; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -55,6 +57,8 @@
 			files = (
 				529799662F2FD51000435877 /* KokoroSwift in Frameworks */,
 				529799682F2FD60000435877 /* MLXUtilsLibrary in Frameworks */,
+				52D0FACE00000000000000A4 /* MLXVLM in Frameworks */,
+				52D0FACE00000000000000A5 /* MLXLMCommon in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -121,6 +125,8 @@
 			packageProductDependencies = (
 				529799652F2FD51000435877 /* KokoroSwift */,
 				529799692F2FD60000435877 /* MLXUtilsLibrary */,
+				52D0FACE00000000000000A2 /* MLXVLM */,
+				52D0FACE00000000000000A3 /* MLXLMCommon */,
 			);
 			productName = KokoroTestApp;
 			productReference = 5247E6922E8A5478003F2FA4 /* KokoroTestApp.app */;
@@ -153,6 +159,7 @@
 			packageReferences = (
 				529799642F2FD51000435877 /* XCRemoteSwiftPackageReference "kokoro-ios" */,
 				5297996B2F2FD60000435877 /* XCRemoteSwiftPackageReference "MLXUtilsLibrary" */,
+				52D0FACE00000000000000A1 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 5247E6932E8A5478003F2FA4 /* Products */;
@@ -443,6 +450,14 @@
 				minimumVersion = 0.0.3;
 			};
 		};
+		52D0FACE00000000000000A1 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ml-explore/mlx-swift-lm";
+			requirement = {
+				kind = exactVersion;
+				version = 2.31.3;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -455,6 +470,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 5297996B2F2FD60000435877 /* XCRemoteSwiftPackageReference "MLXUtilsLibrary" */;
 			productName = MLXUtilsLibrary;
+		};
+		52D0FACE00000000000000A2 /* MLXVLM */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 52D0FACE00000000000000A1 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
+			productName = MLXVLM;
+		};
+		52D0FACE00000000000000A3 /* MLXLMCommon */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 52D0FACE00000000000000A1 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
+			productName = MLXLMCommon;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
