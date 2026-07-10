@@ -2,11 +2,13 @@ import AVFoundation
 import CoreImage
 import MLX
 import SwiftUI
+import UIKit
 import KokoroSwift
 import Combine
 import MLXUtilsLibrary
 
-/// One turn in the conversation, rendered as a chat bubble.
+/// One turn in the conversation, rendered as a chat bubble. `image` is set for
+/// camera questions — the frame that was captured and sent to the VLM.
 struct ChatMessage: Identifiable, Equatable {
   enum Role {
     case user, app
@@ -15,6 +17,10 @@ struct ChatMessage: Identifiable, Equatable {
   let id = UUID()
   let role: Role
   let text: String
+  var image: UIImage? = nil
+
+  // Identity is enough for SwiftUI diffing (UIImage isn't Equatable).
+  static func == (lhs: ChatMessage, rhs: ChatMessage) -> Bool { lhs.id == rhs.id }
 }
 
 /// Where we are in a hands-free conversation turn.
@@ -427,11 +433,15 @@ final class TestAppModel: ObservableObject {
     speechRecognizer.cancel()
     rapidListenFailures = 0
     visionError = nil
-    conversation.append(ChatMessage(role: .user, text: trimmed))
+
+    // Snap the frame now (what the camera saw as the question ended), keep a
+    // thumbnail for the chat, and send the full frame to the VLM.
+    let frame = camera.snapshot()
+    let thumbnail = frame.flatMap { Self.thumbnail(from: $0) }
+    conversation.append(ChatMessage(role: .user, text: trimmed, image: thumbnail))
     conversationState = .thinking
     toolStatus = "👁️ ينظر إلى ما تراه الكاميرا…"
 
-    let frame = camera.snapshot()
     let voiceName = selectedVoice
     Task { [weak self] in
       guard let self else { return }
@@ -459,6 +469,18 @@ final class TestAppModel: ObservableObject {
     reply = reply.trimmingCharacters(in: .whitespacesAndNewlines)
     if reply.isEmpty { reply = "لا أستطيع وصف ذلك." }
     return diacritizedForVoice(reply, voiceName)
+  }
+
+  /// Renders a camera frame to a downscaled UIImage for display in the chat.
+  private static let ciContext = CIContext()
+  private static func thumbnail(from image: CIImage, maxDimension: CGFloat = 720) -> UIImage? {
+    let extent = image.extent
+    guard extent.width > 0, extent.height > 0,
+          extent.width.isFinite, extent.height.isFinite else { return nil }
+    let scale = min(1, maxDimension / max(extent.width, extent.height))
+    let scaled = scale < 1 ? image.transformed(by: CGAffineTransform(scaleX: scale, y: scale)) : image
+    guard let cg = ciContext.createCGImage(scaled, from: scaled.extent) else { return nil }
+    return UIImage(cgImage: cg)
   }
 
   /// Restores tashkeel for an Arabic voice so pronunciation is correct.

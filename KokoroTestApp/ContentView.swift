@@ -277,14 +277,27 @@ struct MessageBubble: View {
         Spacer(minLength: 48)
       }
 
-      Text(message.text)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .foregroundStyle(message.role == .user ? .white : .primary)
-        .background(
-          RoundedRectangle(cornerRadius: 18, style: .continuous)
-            .fill(message.role == .user ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(Color(.systemGray5)))
-        )
+      VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 6) {
+        // Camera frame the question was asked about
+        if let image = message.image {
+          Image(uiImage: image)
+            .resizable()
+            .scaledToFill()
+            .frame(maxWidth: 200, maxHeight: 260)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+
+        if !message.text.isEmpty {
+          Text(message.text)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .foregroundStyle(message.role == .user ? .white : .primary)
+            .background(
+              RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(message.role == .user ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(Color(.systemGray5)))
+            )
+        }
+      }
 
       if message.role == .app {
         Spacer(minLength: 48)
