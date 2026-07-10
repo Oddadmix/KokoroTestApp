@@ -1,12 +1,15 @@
 import CoreImage
 import Foundation
+import Hub
 import MLXLMCommon
 import MLXVLM
 
 /// On-device vision-language model (LiquidAI LFM2.5-VL-450M, 8-bit) via the
-/// MLXVLM library. Answers a question about a camera frame. The weights are
-/// fetched from Hugging Face on first load, then cached locally and run on the
-/// device's GPU through MLX.
+/// MLXVLM library. Answers a question about a camera frame.
+///
+/// The weights (~450 MB) are fetched from Hugging Face on first load into a
+/// durable, backup-excluded directory under Application Support. On later app
+/// launches the model is loaded straight from disk with no network round-trip.
 final class VisionModel {
   enum VisionError: Error { case notLoaded }
 
@@ -15,22 +18,53 @@ final class VisionModel {
 
   var isLoaded: Bool { container != nil }
 
-  /// Loads (downloading on first run) the VLM. `progress` reports 0…1 download.
+  /// Hub configured to store snapshots in Application Support (not the default
+  /// `Caches`, which iOS purges under storage pressure — forcing a re-download).
+  private static let hub: HubApi = {
+    let fm = FileManager.default
+    let base = (try? fm.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                            appropriateFor: nil, create: true))
+      ?? fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    var hfBase = base.appendingPathComponent("huggingface", isDirectory: true)
+    try? fm.createDirectory(at: hfBase, withIntermediateDirectories: true)
+    // Keep the large re-downloadable model out of iCloud/device backups.
+    var values = URLResourceValues()
+    values.isExcludedFromBackup = true
+    try? hfBase.setResourceValues(values)
+    return HubApi(downloadBase: hfBase)
+  }()
+
+  /// Loads the VLM. `progress` reports 0…1 during the first-run download; on a
+  /// cached launch it jumps to 1 and the model loads from disk.
   ///
   /// The published 8-bit `config.json` declares `projector_use_layernorm: false`,
   /// yet the checkpoint ships `multi_modal_projector.layer_norm` weights — so the
   /// MLX loader builds no layer-norm module and weight loading throws
-  /// `incompatibleItems`. We download the repo, correct that flag on disk, then
-  /// load from the local directory (which skips the wrong-config download path).
+  /// `incompatibleItems`. We correct that flag on disk, then load from the local
+  /// directory (which also avoids re-fetching the wrong config).
   func load(progress: (@Sendable (Double) -> Void)? = nil) async throws {
     guard container == nil else { return }
-    let dir = try await downloadModel(
-      hub: defaultHubApi,
-      configuration: ModelConfiguration(id: Self.modelId),
+
+    let config = ModelConfiguration(id: Self.modelId)
+    let dir = config.modelDirectory(hub: Self.hub)
+    let readyMarker = dir.appendingPathComponent(".ready")
+
+    if FileManager.default.fileExists(atPath: readyMarker.path) {
+      // Already downloaded + patched on a previous run — load offline from disk.
+      progress?(1)
+      container = try await VLMModelFactory.shared.loadContainer(
+        configuration: ModelConfiguration(directory: dir))
+      return
+    }
+
+    // First run: download into the durable directory, patch, mark ready, load.
+    let downloaded = try await downloadModel(
+      hub: Self.hub, configuration: config,
       progressHandler: { p in progress?(p.fractionCompleted) })
-    Self.fixProjectorLayerNorm(in: dir)
+    Self.fixProjectorLayerNorm(in: downloaded)
+    try? Data().write(to: downloaded.appendingPathComponent(".ready"))
     container = try await VLMModelFactory.shared.loadContainer(
-      configuration: ModelConfiguration(directory: dir))
+      configuration: ModelConfiguration(directory: downloaded))
   }
 
   /// Rewrites `projector_use_layernorm: false → true` in the model's config.json
